@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gesture Player Final</title>
+    <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="logo.png">
+    
+    <!-- MediaPipe Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        :root {
+            --primary: #1db954;
+            --bg: #121212;
+            --card: #181818;
+            --text: #ffffff;
+            --secondary-text: #b3b3b3;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Main Player UI */
+        .player-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(180deg, rgba(30,30,30,1) 0%, rgba(18,18,18,1) 100%);
+        }
+
+        /* File Input - Centered and Visible */
+        .file-input-container {
+            margin-bottom: 20px;
+            z-index: 10;
+        }
+
+        .custom-file-upload {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            cursor: pointer;
+            background: #333;
+            border-radius: 30px;
+            border: 1px solid #555;
+            font-size: 1rem;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        }
+        
+        .custom-file-upload:active { background: #444; }
+
+        input[type="file"] { display: none; }
+
+        .album-art {
+            width: 240px;
+            height: 240px;
+            background: #282828;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 5rem;
+            position: relative;
+        }
+
+        .song-info {
+            text-align: center;
+            margin-bottom: 30px;
+            width: 100%;
+            padding: 0 20px;
+        }
+
+        .song-title { 
+            font-size: 1.4rem; 
+            font-weight: bold; 
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .song-artist { color: var(--secondary-text); font-size: 1rem; }
+
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .btn-circle {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: white;
+            color: black;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .btn-small {
+            font-size: 2.5rem;
+            color: var(--secondary-text);
+            cursor: pointer;
+        }
+
+        .btn-small.active { color: var(--primary); transform: scale(1.2); }
+
+        /* Volume Bar */
+        .volume-container {
+            width: 80%;
+            height: 6px;
+            background: #333;
+            border-radius: 3px;
+            margin-top: 30px;
+            overflow: hidden;
+            position: relative;
+        }
+        .volume-level {
+            height: 100%;
+            background: var(--primary);
+            width: 100%;
+            transition: width 0.1s;
+        }
+
+        /* Gesture Toast */
+        .gesture-toast {
+            position: absolute;
+            top: 20px; /* Moved to top of container */
+            background: rgba(29, 185, 84, 0.95);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: bold;
+            font-size: 1rem;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 55;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .gesture-toast.show { opacity: 1; }
+
+        /* Camera PIP */
+        .camera-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 100px;
+            height: 133px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #333;
+            background: black;
+            z-index: 50;
+        }
+
+        #input_video, #output_canvas {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            object-fit: cover;
+        }
+        #output_canvas { z-index: 2; }
+        #input_video { opacity: 0.6; }
+
+        /* Overlay */
+        #start-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            overflow-y: auto;
+        }
+
+        .start-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-top: 20px;
+            text-transform: uppercase;
+        }
+        
+        .loader {
+            border: 3px solid #333;
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+
+        .gesture-guide {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            font-size: 0.9rem;
+            color: #ccc;
+            background: #222;
+            padding: 15px;
+            border-radius: 12px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .gesture-item b { color: var(--primary); }
+
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <h1 style="color:white;">Gesture Player V4</h1>
+        <p style="color:#b3b3b3; margin-top:5px;">Advanced Hand Control</p>
+        
+        <div class="gesture-guide">
+            <div class="gesture-item">☝️ <b>One Finger:</b> PLAY</div>
+            <div class="gesture-item">✌️ <b>Two Fingers:</b> PAUSE</div>
+            <div class="gesture-item">👌 <b>Pinch:</b> VOL DOWN</div>
+            <div class="gesture-item">👆 <b>Stretch (L):</b> VOL UP</div>
+            <div class="gesture-item">👈/👉 <b>Swipe:</b> NEXT / PREV</div>
+        </div>
+
+        <p style="font-size: 0.8rem; color: #888;">1. Tap Start. 2. Select Songs. 3. Control.</p>
+
+        <div class="loader" id="loading-spinner"></div>
+        <button class="start-btn" id="start-btn" onclick="initApp()">Start App</button>
+    </div>
+
+    <div class="player-container">
+        <div class="gesture-toast" id="gesture-label">READY</div>
+        
+        <!-- File Input moved HERE for visibility -->
+        <div class="file-input-container">
+            <label for="file-upload" class="custom-file-upload">
+                📂 Select MP3 Files
+            </label>
+            <input id="file-upload" type="file" multiple accept="audio/*" onchange="handleFiles(this.files)"/>
+        </div>
+
+        <div class="album-art">🎵</div>
+        
+        <div class="song-info">
+            <div class="song-title" id="track-title">No Music Loaded</div>
+            <div class="song-artist" id="track-artist">Tap button above to add songs</div>
+        </div>
+
+        <div class="controls">
+            <div id="btn-prev" class="btn-small" onclick="prevTrack()">⏮</div>
+            <div class="btn-circle" onclick="togglePlayManual()">
+                <span id="play-icon">▶</span>
+            </div>
+            <div id="btn-next" class="btn-small" onclick="nextTrack()">⏭</div>
+        </div>
+
+        <div class="volume-container">
+            <div class="volume-level" id="vol-bar"></div>
+        </div>
+    </div>
+
+    <audio id="audio-player"></audio>
+
+    <div class="camera-container">
+        <video id="input_video" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <script>
+        // --- App State ---
+        let playlist = [];
+        let currentIndex = 0;
+        let isPlaying = false;
+        let audio = document.getElementById('audio-player');
+        let currentVolume = 1.0; 
+        
+        // Gesture Tracking
+        let lastAction = 0;
+        const COOLDOWN = 1000; // ms
+        let wristHistory = [];
+        const HISTORY_SIZE = 8;
+        const SWIPE_THRESH = 0.15;
+
+        // --- File Handling ---
+        function handleFiles(files) {
+            if (!files.length) return;
+            const newTracks = Array.from(files).map(file => ({
+                title: file.name.replace(/\.[^/.]+$/, ""),
+                artist: "Local File",
+                src: URL.createObjectURL(file)
+            }));
+            playlist = [...playlist, ...newTracks];
+            
+            // Only load first track if it's the first time
+            if (playlist.length === newTracks.length) {
+                loadTrack(0);
+                showToast("Songs Loaded");
+            } else {
+                showToast(`Added ${newTracks.length} songs`);
+            }
+        }
+
+        // --- Audio Controls ---
+        function loadTrack(index) {
+            if (playlist.length === 0) return;
+            currentIndex = index;
+            if (currentIndex < 0) currentIndex = playlist.length - 1;
+            if (currentIndex >= playlist.length) currentIndex = 0;
+
+            const track = playlist[currentIndex];
+            document.getElementById('track-title').innerText = track.title;
+            document.getElementById('track-artist').innerText = `${currentIndex + 1} / ${playlist.length}`;
+            
+            audio.src = track.src;
+            audio.volume = currentVolume;
+            if (isPlaying) audio.play();
+            updatePlayIcon();
+        }
+
+        function togglePlay(shouldPlay) {
+            if (playlist.length === 0) return;
+            if (shouldPlay === isPlaying) return;
+            isPlaying = shouldPlay;
+            if (isPlaying) {
+                audio.play();
+                showToast("▶ PLAY");
+            } else {
+                audio.pause();
+                showToast("⏸ PAUSE");
+            }
+            updatePlayIcon();
+        }
+
+        function togglePlayManual() { togglePlay(!isPlaying); }
+
+        function nextTrack() {
+            if (playlist.length === 0) return;
+            loadTrack(currentIndex + 1);
+            isPlaying = true;
+            audio.play();
+            showToast("⏭ NEXT");
+            animateBtn('btn-next');
+        }
+
+        function prevTrack() {
+            if (playlist.length === 0) return;
+            loadTrack(currentIndex - 1);
+            isPlaying = true;
+            audio.play();
+            showToast("⏮ PREV");
+            animateBtn('btn-prev');
+        }
+
+        function changeVolume(delta, type) {
+            currentVolume += delta;
+            if (currentVolume > 1.0) currentVolume = 1.0;
+            if (currentVolume < 0.0) currentVolume = 0.0;
+            audio.volume = currentVolume;
+            
+            document.getElementById('vol-bar').style.width = (currentVolume * 100) + "%";
+            
+            // Only show toast periodically to avoid spam
+            if (Math.random() > 0.7) {
+                 showToast(`${type} ${Math.round(currentVolume * 100)}%`);
+            }
+        }
+
+        audio.addEventListener('ended', () => nextTrack());
+
+        // --- UI Helpers ---
+        function updatePlayIcon() {
+            document.getElementById('play-icon').innerText = isPlaying ? "⏸" : "▶";
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('gesture-label');
+            t.innerText = msg;
+            t.classList.add('show');
+            if(t.timer) clearTimeout(t.timer);
+            t.timer = setTimeout(() => t.classList.remove('show'), 1500);
+        }
+
+        function animateBtn(id) {
+            const el = document.getElementById(id);
+            el.classList.add('active');
+            setTimeout(() => el.classList.remove('active'), 300);
+        }
+
+        // --- Core Gesture Logic ---
+        function onResults(results) {
+            const canvasElement = document.getElementById('output_canvas');
+            const ctx = canvasElement.getContext('2d');
+            
+            ctx.save();
+            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: '#1db954', lineWidth: 2});
+                drawLandmarks(ctx, landmarks, {color: '#fff', lineWidth: 1, radius: 2});
+                
+                processGestures(landmarks);
+            }
+            ctx.restore();
+        }
+
+        function processGestures(landmarks) {
+            const now = Date.now();
+
+            const dist = (idx1, idx2) => {
+                const dx = landmarks[idx1].x - landmarks[idx2].x;
+                const dy = landmarks[idx1].y - landmarks[idx2].y;
+                return Math.sqrt(dx*dx + dy*dy);
+            };
+
+            const scale = dist(5, 8); // Scale reference (Index finger length)
+
+            // 1. Swipe Detection (Wrist X Movement)
+            const wristX = landmarks[0].x;
+            wristHistory.push({x: wristX, time: now});
+            if (wristHistory.length > HISTORY_SIZE) wristHistory.shift();
+
+            if (wristHistory.length === HISTORY_SIZE && (now - lastAction > COOLDOWN)) {
+                const start = wristHistory[0];
+                const end = wristHistory[HISTORY_SIZE-1];
+                const diff = end.x - start.x; 
+                
+                if (Math.abs(diff) > SWIPE_THRESH) {
+                    if (diff > 0) nextTrack();
+                    else prevTrack();
+                    lastAction = now;
+                    wristHistory = [];
+                    return; 
+                }
+            }
+
+            // 2. Finger States
+            const isIndexUp = landmarks[8].y < landmarks[6].y;
+            const isMiddleUp = landmarks[12].y < landmarks[10].y;
+            const isRingUp = landmarks[16].y < landmarks[14].y;
+            const isPinkyUp = landmarks[20].y < landmarks[18].y;
+
+            const thumbIndexDist = dist(4, 8); 
+            const isPinch = thumbIndexDist < (0.4 * scale); // Touching
+            const isStretch = thumbIndexDist > (1.3 * scale); // L-Shape
+
+            // A. PAUSE: Two Fingers (Index & Middle) Up
+            if (isIndexUp && isMiddleUp && !isRingUp && !isPinkyUp) {
+                if (now - lastAction > COOLDOWN) {
+                    if (isPlaying) { togglePlay(false); lastAction = now; }
+                }
+                return;
+            }
+
+            // B. PLAY: One Finger (Index) Up ONLY
+            if (isIndexUp && !isMiddleUp && !isRingUp && !isPinkyUp && !isStretch) {
+                if (now - lastAction > COOLDOWN) {
+                    if (!isPlaying) { togglePlay(true); lastAction = now; }
+                }
+                return;
+            }
+
+            // C. VOLUME DOWN: Pinch
+            if (isPinch) {
+                 changeVolume(-0.02, "🔉");
+                 return;
+            }
+
+            // D. VOLUME UP: Stretch
+            if (isIndexUp && isStretch) {
+                changeVolume(0.02, "🔊");
+                return;
+            }
+        }
+
+        // --- Init ---
+        async function initApp() {
+            const btn = document.getElementById('start-btn');
+            const spinner = document.getElementById('loading-spinner');
+            const overlay = document.getElementById('start-overlay');
+
+            btn.style.display = 'none';
+            spinner.style.display = 'block';
+
+            try {
+                const videoElement = document.getElementById('input_video');
+                const canvasElement = document.getElementById('output_canvas');
+
+                const hands = new Hands({locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }});
+
+                hands.setOptions({
+                    maxNumHands: 1,
+                    modelComplexity: 0,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                hands.onResults(onResults);
+
+                const camera = new Camera(videoElement, {
+                    onFrame: async () => {
+                        await hands.send({image: videoElement});
+                    },
+                    width: 320,
+                    height: 240
+                });
+
+                await camera.start();
+
+                videoElement.addEventListener('loadeddata', () => {
+                    canvasElement.width = videoElement.videoWidth;
+                    canvasElement.height = videoElement.videoHeight;
+                });
+
+                overlay.style.display = 'none';
+
+            } catch (e) {
+                alert("Error: " + e.message);
+                btn.style.display = 'block';
+                spinner.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
+
+
